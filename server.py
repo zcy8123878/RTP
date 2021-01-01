@@ -15,7 +15,7 @@ from threading import Thread
 from time import sleep
 import time
 
-from utils import Executor
+from utils import Executor, AudioStream
 from pynput import keyboard
 
 class Server:
@@ -52,6 +52,7 @@ class Server:
                       3:'pretrained/transform_net_31_98.onnx'}
         self.executor.load_model(model_dict, mtype='onnx')
         self.model = self.MODEL.DEFAULT_MODEL
+        self.audio_stream = AudioStream(device_id=7, use_as_input=True, chunk_size=2048)
         return
         
     def monitor_keyboard(self):
@@ -69,8 +70,8 @@ class Server:
         def on_press(key):
             # 按下按键时执行。
             try:
-                print('alphanumeric key {0} pressed'.format(
-                    key.char))
+                # print('alphanumeric key {0} pressed'.format(
+                #     key.char))
 
                 if key.char == '1':
                     self.model = self.MODEL.MODEL1
@@ -82,8 +83,9 @@ class Server:
                     self.model = self.MODEL.DEFAULT_MODEL
 
             except AttributeError:
-                print('special key {0} pressed'.format(
-                    key))
+                # print('special key {0} pressed'.format(
+                #     key))
+                pass
             # 通过属性判断按键类型。
 
         # Collect events until released
@@ -145,12 +147,18 @@ class Server:
         self.video_stream = VideoStream(url)
         self.rtp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.start_rtp_send_thread()
+
         return
     
     def start_rtp_send_thread(self):
         self._rtp_send_thread = Thread(target=self.do_screen_send)
         self._rtp_send_thread.setDaemon(True)
         self._rtp_send_thread.start()
+
+        self._rtp_send_audio_thread = Thread(target=self.do_audio_send)
+        self._rtp_send_audio_thread.setDaemon(True)
+        self._rtp_send_audio_thread.start()
+
         return
     
     def do_video_send(self):
@@ -181,17 +189,40 @@ class Server:
             sleep(self.DPS/1000.)
         return
 
+    def do_audio_send(self):
+        print(f"Start sending audio to {self.client_address[0]}:{self.client_address[1]}")
+
+        while True:
+            print('start audio send')
+            t1 = time.time()
+            frame = self.audio_stream.read()
+            frame += b'\xff\xd9'
+
+            rtp_packet = RTPPacket(
+                payload_type=RTPPacket.TYPE.AUDIO,
+                sequence_number=0,
+                timestamp=0,
+                payload=frame
+            )
+
+            packet = rtp_packet.get_packet()
+            self.send_rtp_packet(packet, type='audio')
+
+            t2 = time.time()
+            wait_time = self.audio_stream.interval + (t1 - t2) / 1000 - 0.005
+            print(wait_time)
+            if wait_time > 1e-4:
+                time.sleep(wait_time)
+            print('end audio send')
+
     def do_screen_send(self):
         print(f"Start sending screen to {self.client_address[0]}:{self.client_address[1]}")
         DEFAULT_SIZE = (320 * 2, 200 * 2)
 
-        # win = tkinter.Tk()
-        # width = win.winfo_screenwidth() # can not get full screen size on my PC
-        # height = win.winfo_screenheight()
-
         frame_number = -1
 
         while True:
+            print('start screen send')
             if self.server_state == self.STATE.TEARDOWN:
                 return
             if self.server_state != self.STATE.PLAYING:
@@ -202,7 +233,7 @@ class Server:
 
             frame = ImageGrab.grab(all_screens=True)
             
-            # 此处根据 model类别对获取的图像进行处理
+            # 此处根据model类别对获取的图像进行处理
             if self.model > self.MODEL.DEFAULT_MODEL:
                 frame = self.executor.inference(frame, self.model)
 
@@ -216,6 +247,8 @@ class Server:
 
                 frame_number += 1
 
+                print(type(frame))
+
                 rtp_packet = RTPPacket(
                     payload_type=RTPPacket.TYPE.MJPEG,
                     sequence_number=frame_number,
@@ -226,19 +259,24 @@ class Server:
                 print('Packet header:')
                 rtp_packet.print_header()
                 packet = rtp_packet.get_packet()
-                self.send_rtp_packet(packet)
+                self.send_rtp_packet(packet, type='video')
 
+                print('end screen send')
                 t2 = time.time()
                 if t2 - t1 > self.DPS:
                     sleep((self.DPS + t1 - t2) / 1000.)
         return
 
 
-    def send_rtp_packet(self,packet):
+    def send_rtp_packet(self, packet, type='video'):
         to_send = packet[:]
         while to_send:
             try:
-                self.rtp_socket.sendto(to_send[:self.DEFAULT_CHUNK_SIZE], self.client_address)
+                if type == 'video':
+                    self.rtp_socket.sendto(to_send[:self.DEFAULT_CHUNK_SIZE], self.client_address)
+                elif type == 'audio':
+                    self.rtp_socket.sendto(to_send[:self.DEFAULT_CHUNK_SIZE],
+                                           (self.client_address[0], self.client_address[1]+1))
             except socket.error as e:
                 print(f"failed to send rtp packet: {e}")
                 return

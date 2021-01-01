@@ -12,7 +12,7 @@ from time import sleep
 # place the video
 def place_video():
     fram = get_nxt_frame()
-    if fram==None:
+    if fram is None:
         return
     fram,_ = fram
     imgtk = ImageTk.PhotoImage(image=fram)
@@ -33,26 +33,28 @@ def connect_server():
     usr.establish_rtsp_connection()
     usr.send_setup_request()
 
-root = Tk()
-app = Frame(root, bg="white")
-app.grid()
-# Create a label in the frame
-lmain = Label(app)
-lmain.grid()
+if __name__ == '__main__':
+    root = Tk()
+    app = Frame(root, bg="white")
+    app.grid()
 
-file_name = Config.DEFAULT_FILE
-host_address = Config.HOST
-host_port = Config.SERVER_PORT
-rtp_port = host_port + 1
-print("Start to run client")
-usr = Client(file_name, host_address, host_port, rtp_port)
-# try to connect the server
-connect_server()
+    # Create a label in the frame
+    lmain = Label(app)
+    lmain.grid()
 
-print("Start to play!")
-# start to show the video
-usr.send_play_request()
-while True: 
-    place_video()
-    sleep(1/Config.DEFAULT_FPS)
-root.mainloop()
+    file_name = Config.DEFAULT_FILE
+    host_address = Config.HOST
+    host_port = Config.SERVER_PORT
+    rtp_port = host_port + 1
+    print("Start to run client")
+    usr = Client(file_name, host_address, host_port, rtp_port)
+    # try to connect the server
+    connect_server()
+
+    print("Start to play!")
+    # start to show the video
+    usr.send_play_request()
+    while True:
+        place_video()
+        sleep(1/Config.DEFAULT_FPS)
+    root.mainloop()
