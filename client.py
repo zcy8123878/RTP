@@ -24,8 +24,10 @@ class Client:
 
     PACKET_HEADER_LENGTH = Config.PACKET_HEADER_LENGTH
 
+	# 这些变量都是类变量，它的值将在这个类的所有实例之间共享。你可以在内部类或外部类使用 ClassName.variableName 访问
+
     def __init__(self,file_path,host_ip,host_port,rtp_port):
-        self.rtsp_connection: Union[None, socket.socket] = None
+        self.rtsp_connection: Union[None, socket.socket] = None  # python 类型注解
         self.rtp_socket: Union[None, socket.socket] = None
         self.rtp_receive_thread: Union[None, Thread] = None
         self.frame_buffer = collections.deque(maxlen=30)
